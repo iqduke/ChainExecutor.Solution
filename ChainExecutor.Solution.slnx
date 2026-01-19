@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ChainExecutor.Test/ChainExecutor.Test.csproj" />
+  <Project Path="ChainExecutor/ChainExecutor.Framework.csproj" />
+</Solution>
