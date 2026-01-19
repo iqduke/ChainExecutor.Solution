@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="ChainExecutor.NetCoreApp/ChainExecutor.NetCoreApp.csproj" Id="2db5213e-c887-4086-9305-971fd33ff56e" />
   <Project Path="ChainExecutor.Test/ChainExecutor.Test.csproj" />
   <Project Path="ChainExecutor/ChainExecutor.Framework.csproj" />
 </Solution>
