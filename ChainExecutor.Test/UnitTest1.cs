@@ -1,5 +1,5 @@
-using ChainExecutor.Framework;
-
+using System.Collections.Concurrent;
+using ChainExecutor.NetCoreApp;
 namespace ChainExecutor.Test
 {
     public class UnitTest1
@@ -20,6 +20,9 @@ namespace ChainExecutor.Test
 			await TestAsyncChainWithCustomException();
 		}
 
+		
+
+
 		/// <summary>
 		/// 测试同步链式调用 + 缓存
 		/// </summary>
@@ -32,7 +35,7 @@ namespace ChainExecutor.Test
 				.Comment("校验")
 				.ValidateData(user => user?.Age >= 18)
 				.Comment("业务处理")
-				.ProcessBusiness(user =>
+				.ProcessBusiness((user,pa) =>
 				{
 					if (user != null)
 					{
@@ -64,7 +67,7 @@ namespace ChainExecutor.Test
 					await Task.Delay(100); // 模拟异步验证
 					return user?.Age >= 18;
 				}).GetAwaiter().GetResult()
-				.ProcessBusinessAsync(async (user) =>
+				.ProcessBusinessAsync(async (user,pa) =>
 				{
 					await Task.Delay(200); // 模拟异步更新数据
 					if (user != null) user.Name = $"[{user.Name}] - 已实名认证（异步处理）";

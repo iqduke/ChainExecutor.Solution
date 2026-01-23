@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Collections.Concurrent;
 
 namespace ChainExecutor.NetCoreApp
 {
@@ -103,6 +104,9 @@ namespace ChainExecutor.NetCoreApp
 		#region 私有字段
 		// 业务数据
 		private TData _innerData;
+		// 入参
+		private ConcurrentDictionary<string, object> _inputParameters = new ConcurrentDictionary<string, object>();
+
 		// 错误信息
 		private string _innerErrorMessage = string.Empty;
 		// 错误标记
@@ -193,17 +197,42 @@ namespace ChainExecutor.NetCoreApp
 		}
 
 		/// <summary>
+		/// 初始化业务数据（同步）
+		/// </summary>
+		/// <param name="initData">初始化数据</param>
+		/// <param name="inputParam">输入参数字典</param>
+		/// <returns>当前实例</returns>
+		public ChainExecutor<TData> InitData(ConcurrentDictionary<string, object> inputParam)
+		{
+			if (_hasError) return this;
+
+			try
+			{
+				_inputParameters = inputParam ?? new ConcurrentDictionary<string, object>();
+				RecordLog(nameof(InitData), "数据初始化完成");
+			}
+			catch (Exception ex)
+			{
+				_hasError = true;
+				_innerErrorMessage = $"数据初始化失败：{ex.Message}";
+				RecordLog(nameof(InitData), _innerErrorMessage, false);
+			}
+
+			return this;
+		}
+
+		/// <summary>
 		/// 处理业务逻辑（同步）
 		/// </summary>
 		/// <param name="processAction">业务处理委托</param>
 		/// <returns>当前实例</returns>
-		public ChainExecutor<TData> ProcessBusiness(Action<TData> processAction)
+		public ChainExecutor<TData> ProcessBusiness(Action<TData, ConcurrentDictionary<string, object>> processAction)
 		{
 			if (_hasError || processAction == null) return this;
 
 			try
 			{
-				processAction.Invoke(_innerData);
+				processAction.Invoke(_innerData, _inputParameters);
 				RecordLog(nameof(ProcessBusiness), "业务逻辑处理完成");
 			}
 			catch (Exception ex)
@@ -228,6 +257,40 @@ namespace ChainExecutor.NetCoreApp
 			try
 			{
 				var isValid = validateFunc.Invoke(_innerData);
+				if (!isValid)
+				{
+					throw new CustomValidationException("数据不符合业务规则（如：年龄必须≥18、字符串不能为空）");
+				}
+				RecordLog(nameof(ValidateData), "数据验证通过");
+			}
+			catch (CustomValidationException ex)
+			{
+				_hasError = true;
+				_innerErrorMessage = $"数据验证失败：{ex.Message}";
+				RecordLog(nameof(ValidateData), _innerErrorMessage, false);
+			}
+			catch (Exception ex)
+			{
+				_hasError = true;
+				_innerErrorMessage = $"数据验证异常（非验证类错误）：{ex.Message}";
+				RecordLog(nameof(ValidateData), _innerErrorMessage, false);
+			}
+
+			return this;
+		}
+
+		/// <summary>
+		/// 验证数据有效性（同步）
+		/// </summary>
+		/// <param name="validateFunc">数据验证委托</param>
+		/// <returns>当前实例</returns>
+		public ChainExecutor<TData> ValidateData(Func<ConcurrentDictionary<string, object>, bool> validateFunc)
+		{
+			if (_hasError || validateFunc == null) return this;
+
+			try
+			{
+				var isValid = validateFunc.Invoke(_inputParameters);
 				if (!isValid)
 				{
 					throw new CustomValidationException("数据不符合业务规则（如：年龄必须≥18、字符串不能为空）");
@@ -277,17 +340,41 @@ namespace ChainExecutor.NetCoreApp
 		}
 
 		/// <summary>
+		/// 初始化业务数据（异步）
+		/// </summary>
+		/// <param name="initDataFunc">异步初始化委托</param>
+		/// <returns>当前实例</returns>
+		public async Task<ChainExecutor<TData>> InitDataAsync(Func<Task<ConcurrentDictionary<string, object>>> initDataFunc)
+		{
+			if (_hasError || initDataFunc == null) return this;
+
+			try
+			{
+				_inputParameters = await initDataFunc.Invoke();
+				RecordLog(nameof(InitDataAsync), "异步数据初始化完成");
+			}
+			catch (Exception ex)
+			{
+				_hasError = true;
+				_innerErrorMessage = $"异步数据初始化失败：{ex.Message}";
+				RecordLog(nameof(InitDataAsync), _innerErrorMessage, false);
+			}
+
+			return this;
+		}
+
+		/// <summary>
 		/// 处理业务逻辑（异步）
 		/// </summary>
 		/// <param name="processFunc">异步业务处理委托</param>
 		/// <returns>当前实例</returns>
-		public async Task<ChainExecutor<TData>> ProcessBusinessAsync(Func<TData, Task> processFunc)
+		public async Task<ChainExecutor<TData>> ProcessBusinessAsync(Func<TData, ConcurrentDictionary<string,object> ,Task> processFunc)
 		{
 			if (_hasError || processFunc == null) return this;
 
 			try
 			{
-				await processFunc.Invoke(_innerData);
+				await processFunc.Invoke(_innerData, _inputParameters);
 				RecordLog(nameof(ProcessBusinessAsync), "异步业务逻辑处理完成");
 			}
 			catch (Exception ex)
@@ -312,6 +399,40 @@ namespace ChainExecutor.NetCoreApp
 			try
 			{
 				var isValid = await validateFunc.Invoke(_innerData);
+				if (!isValid)
+				{
+					throw new CustomValidationException("异步数据验证失败：数据不符合业务规则");
+				}
+				RecordLog(nameof(ValidateDataAsync), "异步数据验证通过");
+			}
+			catch (CustomValidationException ex)
+			{
+				_hasError = true;
+				_innerErrorMessage = $"异步数据验证失败：{ex.Message}";
+				RecordLog(nameof(ValidateDataAsync), _innerErrorMessage, false);
+			}
+			catch (Exception ex)
+			{
+				_hasError = true;
+				_innerErrorMessage = $"异步数据验证异常（非验证类错误）：{ex.Message}";
+				RecordLog(nameof(ValidateDataAsync), _innerErrorMessage, false);
+			}
+
+			return this;
+		}
+
+		/// <summary>
+		/// 验证数据有效性（异步）
+		/// </summary>
+		/// <param name="validateFunc">异步数据验证委托</param>
+		/// <returns>当前实例</returns>
+		public async Task<ChainExecutor<TData>> ValidateDataAsync(Func<ConcurrentDictionary<string, object>, Task<bool>> validateFunc)
+		{
+			if (_hasError || validateFunc == null) return this;
+
+			try
+			{
+				var isValid = await validateFunc.Invoke(_inputParameters);
 				if (!isValid)
 				{
 					throw new CustomValidationException("异步数据验证失败：数据不符合业务规则");
