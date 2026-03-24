@@ -1,10 +1,12 @@
+using ChainExecutor.NetCoreApp;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using ChainExecutor.NetCoreApp;
+using Xunit.Sdk;
 
 namespace ChainExecutor.Test
 {
@@ -24,62 +26,70 @@ namespace ChainExecutor.Test
 		static async Task TestSyncChainWithCache2()
 		{
 
-			var param = new ConcurrentDictionary<string, object>();
-			param.AddOrUpdate("Id", 1, (k, v) => 1);
-
-			var result = new ChainExecutor<User>()
-				.Comment("初始化")
-				.InitData(new User { Id = 1, Name = "张三", Age = 25 })
-				.InitData(param)
-				.Comment("校验")
-				.ValidateData(user => user?.Age >= 18)
-				.Comment("业务处理")
-				.ProcessBusiness((user, pa) =>
+			// 1. 链式编排业务流程
+			var result = await new ChainExecutor<UserCreateModel>()
+				// 初始化模型数据
+				.InitData(new UserCreateModel
 				{
-					if (user != null)
-					{
-						user.Name = $"[{user.Name}] - 已实名认证（同步处理）";
-						System.Threading.Thread.Sleep(300); // 模拟耗时业务
-					}
-
-					Console.Write(pa.GetOrAdd("Id", -1));
+					Id = 1,
+					Username = "张三",
+					Age = 17  // 故意设为17，触发验证失败
 				})
-				.Execute();
 
-			// 打印结果
-			PrintTestResult(result);
-		}
+				// 自动验证 DataAnnotation 特性（[Required]/[Range]）
+				.ValidateAnnotations()
 
-		/// <summary>
-		/// 通用测试结果打印方法
-		/// </summary>
-		/// <typeparam name="T">数据类型</typeparam>
-		/// <param name="result">执行结果</param>
-		static void PrintTestResult<T>(ChainExecuteResult<T> result) where T : class, new()
-		{
-			Console.WriteLine($"\n----- 结果汇总 -----");
-			Console.WriteLine($"执行状态：{(result.IsSuccess ? "✅ 成功" : "❌ 失败")}");
+				// 自定义业务规则验证
+				.ValidateModel(m => !string.IsNullOrWhiteSpace(m.Username))
+
+				// 业务逻辑处理
+				.Process(ctx =>
+				{
+					// 处理业务数据
+					ctx.Data!.Username = $"【正式用户】{ctx.Data.Username}";
+					// 上下文临时存储（跨步骤共享数据）
+					ctx.Items["BusinessStep"] = "用户信息格式化完成";
+				})
+
+				// 事务包裹（数据库操作统一提交/回滚）
+				.UseTransaction(ctx =>
+				{
+					// 此处编写数据库写入逻辑
+					// _dbContext.Add(ctx.Data);
+					// _dbContext.SaveChanges();
+				})
+
+				// 最终执行
+				.ExecuteAsync();
+
+			// 2. 结果处理
 			if (!result.IsSuccess)
 			{
-				Console.WriteLine($"错误信息：{result.ErrorMessage}");
-				return;
+				Console.WriteLine($"执行失败：{result.ErrorMessage}");
+				throw new CustomValidationException(result.ErrorMessage);
 			}
 
-			// 打印业务数据（仅User类型）
-			if (result.Data is User user)
-			{
-				Console.WriteLine($"用户ID：{user.Id}");
-				Console.WriteLine($"用户姓名：{user.Name}");
-				Console.WriteLine($"用户年龄：{user.Age}");
-			}
-
-			// 打印前3条日志（简化输出，如需完整日志可遍历全部）
-			Console.WriteLine($"\n----- 前3条执行日志 -----");
-			var logCount = Math.Min(3, result.ExecuteLogs.Count);
-			for (int i = 0; i < logCount; i++)
-			{
-				Console.WriteLine(result.ExecuteLogs[i]);
-			}
+			Console.WriteLine($"执行成功：{result.Data!.Username}");
 		}
+	}
+
+	public class UserCreateModel
+	{
+		/// <summary>
+		/// 用户ID
+		/// </summary>
+		public int Id { get; set; }
+
+		/// <summary>
+		/// 用户名（必填）
+		/// </summary>
+		[Required(ErrorMessage = "用户名不能为空")]
+		public string Username { get; set; } = string.Empty;
+
+		/// <summary>
+		/// 年龄（18~120岁）
+		/// </summary>
+		[Range(18, 120, ErrorMessage = "年龄必须≥18且≤120")]
+		public int Age { get; set; }
 	}
 }
