@@ -15,7 +15,7 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>symbols.nupkg</SymbolPackageFormat>
     <Description>一款支持链式调用、异步操作、缓存、流程追踪的通用执行框架</Description>
-	<Version>1.0.1</Version>
+	<Version>1.0.2</Version>
     <AssemblyVersion>1.0.1</AssemblyVersion>
     <FileVersion>1.0.1</FileVersion>
   </PropertyGroup>
